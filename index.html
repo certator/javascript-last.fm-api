@@ -7,7 +7,56 @@
   <script type="text/javascript" src="https://raw.github.com/certator/javascript-last.fm-api/master/lastfm.api.md5.js"></script>
   <script type="text/javascript" src="https://raw.github.com/certator/javascript-last.fm-api/master/lastfm.api.js"></script>
   
+  <script type="text/javascript">  
+function args_to_array(args)
+{
+    var r = [];
+    for (var i=0; i<args.length; i++)
+        r.push(args[i])
+    return r;
+}
+
+Function.prototype.scope = function () {
+    var fn = this;
+    var args = args_to_array(arguments);
+    return function () {
+        var targs = args_to_array(arguments);
+        targs = targs.concat(args);
+        return fn.apply(this, targs);
+    };
+};
+
+Function.prototype.scope_left = function () {
+    var fn = this;
+    var args = args_to_array(arguments);
+    return function () {
+        var targs = args_to_array(arguments);
+        targs = args.concat(targs);
+        return fn.apply(this, targs);
+    };
+};
+
+Function.prototype.swap_this = function (new_this, pass_old_this)
+{
+    var fn = this;
+    return function () {
+        var targs = args_to_array(arguments);
+        if (pass_old_this)
+            targs = [this].concat(targs);
+        return fn.apply(new_this, targs);
+    };    
+}
+//////
+</script>
+  
   <script type="text/javascript">
+    window.default_cb = {success: function(data){
+				/* Use data. */
+				console.log(data);
+			}, error: function(code, message){
+				/* Show error message. */
+				console.error(code, message);
+			}};
   	$(function () {
   		$("#test").click(function() {
 		
@@ -18,13 +67,7 @@
 			});
 		
 			/* Load some artist info. */
-			lastfm.artist.getInfo({artist: 'The xx'}, {success: function(data){
-				/* Use data. */
-				console.log(data);
-			}, error: function(code, message){
-				/* Show error message. */
-				console.error(code, message);
-			}});
+			lastfm.artist.getInfo({artist: 'The xx'}, window.default_cb);
 			window.lastfm = lastfm;
 			
   			return false;
@@ -34,11 +77,215 @@
   			$.cookie("lastfm_api_secret", $("#api_secret").val());
   			return false;
   		});
-  		if ($.cookie("lastfm_api_key") != null)
-  			$("#api_key").val($.cookie("lastfm_api_key"));
   		if ($.cookie("lastfm_api_secret") != null)
   			$("#api_secret").val($.cookie("lastfm_api_secret"));
+  		if ($.cookie("lastfm_api_key") != null)
+  		{
+  			$("#api_key").val($.cookie("lastfm_api_key"));
+			var lastfm = new LastFM({
+				apiKey    : $("#api_key").val(),
+				apiSecret : $("#api_secret").val()
+			});
+		}
+  			
+  			
+  		$('#artist_search').click(function () {
+  			$("#input_form").html('');
+  			var params = {
+  				limit: 30,
+  				page: 1,
+  				artist: ""
+  			};
+  			for (var k in params)
+  			{
+  				var def_val = params[k];
+  				var p = $("<p/>");
+  				p.html(k);
+  				var inp = $("<input/>");
+  				inp.attr('id', k);
+  				inp.attr('type', 'text');
+  				inp.val(def_val);
+  				$("#input_form").append(p);
+  				$("#input_form").append(inp);
+  			}
+			var call = $("<input/>");
+			call.attr('type', 'submit');
+			call.val('Call');
+			$("#input_form").append($("<p/>"));
+			$("#input_form").append(call);
+			call.click(function () {
+				lastfm.artist.search({
+					artist: $("#artist").val(),
+					page: $("#page").val(),
+					limit: $("#limit").val()
+				}, {
+					success: function(data){
+						/* Use data. */
+						console.log(data);												
+						
+						var r = data.results.artistmatches.artist;
+						$("#result").html('');
+						var t = $("<table/>");
+						var tr = $("<tr/>");
+						tr.append($("<th/>").html('name'));
+						tr.append($("<th/>").html('listeners'));
+						t.append(tr);
+						for (var i in r) {
+							var a = r[i];
+							var tr = $("<tr/>");
+							tr.append($("<td/>").html(a.name));						
+							tr.append($("<td/>").html(a.listeners));						
+							t.append(tr);
+						}
+						$("#result").append(t);
+					}, 
+					error: function(code, message){
+						/* Show error message. */
+						console.error(code, message);
+					}
+				});
+				return false;
+			});
+  			return false;
+  		});
   	});
+  	
+  	function intersect_multitag_search(state)
+  	{
+  		var result_ids = {};
+  		var artists = {};
+  		var tags = [];
+  		for (var j in state.tags)
+  		{
+  			var t = state.tags[j];
+  			result_ids[t] = [];
+  			for (var i in state.results[t])
+  			{
+  				var r = state.results[t][i];
+  				result_ids[t].push(r.name)
+  				artists[r.name] = r;
+  			}
+  			tags.push(t);
+  		}
+  		console.log('result_ids', result_ids);
+  		// intersect
+  		var res = null;
+  		while (tags.length != 1)
+  		{
+  			var t0 = tags[0];
+  			var t1 = tags[1];
+  			var rr = [];  			
+  			for (var i in result_ids[t0])
+  			{
+  				var id = result_ids[t0][i];
+  				if (result_ids[t1].indexOf(id) != -1 && (res == null || res.indexOf(id) != -1))
+  					rr.push(id);
+  			}
+  			res = res == null ? [] : res;
+  			res = res.concat(rr);
+  			tags.pop(1);
+  		}
+  		return {res: res, artists: artists};
+  	}
+  	
+  	//st = multitag_search(["instrumental", "metal"])
+	function multitag_search(tags, state) 
+	{
+		if (state === undefined)
+		{ // user call
+			var state = { 
+				cancel: false,
+				tags: tags,
+				cur_tag: 0,	
+				cur_page: 0,
+				results: {}	
+			};
+			multitag_search(tags, state);
+			return state;
+		} else {			
+			var s = state;
+			if (s.cancel)
+			{
+				console.log('cancelled');
+				return;
+			}
+			if (s.cur_tag < (tags.length-1))
+			{
+				s.cur_tag++;
+			} else {
+				s.cur_page = s.cur_page + 1;
+				s.cur_tag = 0;
+			}
+			var req = {tag: s.tags[s.cur_tag], page: s.cur_page};
+			lastfm.tag.getTopArtists(req, {
+				success: function (cstate, data) {
+					console.log('success', cstate);					
+					var r = data.topartists.artist;
+					var req = cstate.req;
+					var state = cstate.state;
+					if (state.results[req.tag] === undefined)
+						state.results[req.tag] = [];
+					state.results[req.tag] = state.results[req.tag].concat(r);
+					setTimeout(function (state) {
+						multitag_search(state.tags, state);
+					}.scope_left(state), 1000);
+				}.scope_left({state: state, req: req }),
+				error: function(code, message){
+					console.error(code, message);
+				}
+			});
+		}
+	}
+  	
+	function multitag_search2(tags, state) 
+	{
+		if (state === undefined)
+		{ // user call
+			var state = { 
+				cancel: false,
+				tags: tags,
+				cur_tag: 0,	
+				cur_page: 0,
+				results: {}	
+			};
+			multitag_search(tags, state);
+			return state;
+		} else {			
+			var s = state;
+			if (s.cancel)
+			{
+				console.log('cancelled');
+				return;
+			}
+			if (s.cur_tag < (tags.length-1))
+			{
+				// s.cur_tag++;
+			} else {
+				s.cur_page = s.cur_page + 1;
+				s.cur_tag = 0;
+			}
+			var req = {tag: s.tags[s.cur_tag], page: s.cur_page};
+			lastfm.tag.getTopArtists(req, {
+				success: function (cstate, data) {
+					console.log('success', cstate);					
+					var r = data.topartists.artist;
+					var req = cstate.req;
+					var state = cstate.state;
+					if (state.results[req.tag] === undefined)
+						state.results[req.tag] = [];
+					state.results[req.tag] = state.results[req.tag].concat(r);
+					setTimeout(function (state) {
+						multitag_search(state.tags, state);
+					}.scope_left(state), 1000);
+				}.scope_left({state: state, req: req }),
+				error: function(code, message){
+					console.error(code, message);
+				}
+			});
+		}
+	}
+
+  	
   </script>
 </head>
 <body>
@@ -48,7 +295,28 @@
 	<input type="text" name="api_secret" id="api_secret">
     <input type="submit" id="save" value="Save to cookie" style="border:0">
     <input type="submit" id="test" value="Init and test" style="border:0">
-	<p>Enter api key (and secret if need), init, and make tests in javascript console</p>	
-
+	<p>Enter api key (and secret if need), init, and make tests in javascript console</p>
+	<table>
+		<tr>
+			<td>
+				artist
+			</td>
+			<td>
+				tags
+			</td>
+		</tr>
+		<tr>
+			<td>
+				<a href="#" id="artist_search">search</a>
+			</td>
+			<td>
+				search
+			</td>
+		</tr>
+	</table>
+	<div id="input_form">
+	</div>	
+	<div id="result">
+	</div>	
 </body>
 
