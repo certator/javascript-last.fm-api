@@ -1,1 +1,54 @@
-My GitHub Page
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Last.fm API Playground</title>
+  <script type="text/javascript" src="http://code.jquery.com/jquery-1.8.3.min.js"></script>
+  <script type="text/javascript" src="https://raw.github.com/carhartl/jquery-cookie/v1.2.0/jquery.cookie.js"></script>
+  <script type="text/javascript" src="https://raw.github.com/certator/javascript-last.fm-api/master/lastfm.api.md5.js"></script>
+  <script type="text/javascript" src="https://raw.github.com/certator/javascript-last.fm-api/master/lastfm.api.js"></script>
+  
+  <script type="text/javascript">
+  	$(function () {
+  		$("#test").click(function() {
+		
+			/* Create a LastFM object */
+			var lastfm = new LastFM({
+				apiKey    : $("#api_key").val(),
+				apiSecret : $("#api_secret").val()
+			});
+		
+			/* Load some artist info. */
+			lastfm.artist.getInfo({artist: 'The xx'}, {success: function(data){
+				/* Use data. */
+				console.log(data);
+			}, error: function(code, message){
+				/* Show error message. */
+				console.error(code, message);
+			}});
+			window.lastfm = lastfm;
+			
+  			return false;
+  		});
+  		$("#save").click(function() {
+  			$.cookie("lastfm_api_key", $("#api_key").val());
+  			$.cookie("lastfm_api_secret", $("#api_secret").val());
+  			return false;
+  		});
+  		if ($.cookie("lastfm_api_key") != null)
+  			$("#api_key").val($.cookie("lastfm_api_key"));
+  		if ($.cookie("lastfm_api_secret") != null)
+  			$("#api_secret").val($.cookie("lastfm_api_secret"));
+  	});
+  </script>
+</head>
+<body>
+	<p>Api key</p>	
+	<input type="text" name="api_key" id="api_key">
+	<p>Api secret</p>	
+	<input type="text" name="api_secret" id="api_secret">
+    <input type="submit" id="save" value="Save to cookie" style="border:0">
+    <input type="submit" id="test" value="Init and test" style="border:0">
+	<p>Enter api key (and secret if need), init, and make tests in javascript console</p>	
+
+</body>
+
